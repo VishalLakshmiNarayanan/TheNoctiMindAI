@@ -26,11 +26,10 @@ if submitted:
     with st.spinner("Extracting motifs, emotions, archetype, and reframing (LLM)..."):
         llm_out = analyze_dream_llm(text)
 
-    # sanity fix for emotions to avoid NaN% issues
+    # Normalize emotions to avoid NaN / sum!=100 issues
     emo = llm_out["emotions"]
     total = sum(max(v, 0) for v in emo.values())
     if total <= 0:
-        # fallback: neutral 100
         emo = {k: (100.0 if k == "neutral" else 0.0) for k in ["joy","sadness","fear","anger","disgust","surprise","neutral"]}
     else:
         emo = {k: round((max(v, 0)/total)*100.0, 2) for k,v in emo.items()}

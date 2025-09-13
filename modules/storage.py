@@ -1,4 +1,5 @@
-from sqlalchemy import create_engine, text
+# modules/storage.py
+from sqlalchemy import create_engine, text as sa_text
 from sqlalchemy.pool import StaticPool
 import json
 import pandas as pd
@@ -15,7 +16,7 @@ _engine = create_engine(
 
 def init_db():
     with _engine.begin() as conn:
-        conn.execute(text("""
+        conn.execute(sa_text("""
         CREATE TABLE IF NOT EXISTS dreams (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           created_at TEXT NOT NULL,
@@ -32,15 +33,19 @@ def init_db():
         """))
 
 def insert_dream(text, tags, sleep_hours, sleep_quality, motifs, archetype, reframed, emotions, embedding):
+    """
+    Note: parameter name `text` intentionally kept to match callers.
+    We alias SQLAlchemy `text()` to `sa_text` to avoid shadowing.
+    """
     with _engine.begin() as conn:
         conn.execute(
-            text("""
+            sa_text("""
             INSERT INTO dreams (created_at, text, tags, sleep_hours, sleep_quality, motifs, archetype, reframed, emotions, embedding)
             VALUES (:created_at, :text, :tags, :sleep_hours, :sleep_quality, :motifs, :archetype, :reframed, :emotions, :embedding)
             """),
             dict(
                 created_at=datetime.utcnow().isoformat(timespec="seconds"),
-                text=text.strip(),
+                text=(text or "").strip(),
                 tags=(tags or "").strip(),
                 sleep_hours=float(sleep_hours) if sleep_hours is not None else None,
                 sleep_quality=int(sleep_quality) if sleep_quality is not None else None,
@@ -51,23 +56,20 @@ def insert_dream(text, tags, sleep_hours, sleep_quality, motifs, archetype, refr
                 embedding=np.asarray(embedding, dtype="float32").tobytes()
             )
         )
-        # fetch last id
-        res = conn.execute(text("SELECT last_insert_rowid()"))
+        res = conn.execute(sa_text("SELECT last_insert_rowid()"))
         return res.scalar_one()
 
 def fetch_dreams_dataframe() -> pd.DataFrame:
     with _engine.begin() as conn:
-        rows = conn.execute(text("SELECT * FROM dreams ORDER BY created_at ASC")).mappings().all()
+        rows = conn.execute(sa_text("SELECT * FROM dreams ORDER BY created_at ASC")).mappings().all()
     if not rows:
         return pd.DataFrame()
 
     def decode(row):
-        import numpy as np, json, struct
         emb = np.frombuffer(row["embedding"], dtype="float32")
         emoj = json.loads(row["emotions"] or "{}")
         motifs = json.loads(row["motifs"] or "[]")
         preview = (row["text"][:120] + "…") if len(row["text"]) > 120 else row["text"]
-        # determine top emotion
         top_em = max(emoj, key=lambda k: emoj.get(k,0)) if emoj else "neutral"
         return {
             **row,
@@ -84,4 +86,4 @@ def fetch_dreams_dataframe() -> pd.DataFrame:
 
 def wipe_all_data():
     with _engine.begin() as conn:
-        conn.execute(text("DELETE FROM dreams"))
+        conn.execute(sa_text("DELETE FROM dreams"))

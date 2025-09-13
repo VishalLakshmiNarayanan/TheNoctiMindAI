@@ -15,24 +15,43 @@ st.subheader("Emotion distribution")
 st.plotly_chart(emotion_distribution_pie(df), use_container_width=True)
 
 st.subheader("Sleep vs. Negative Affect")
-# Define negative affect as (fear+sadness+anger+disgust)
-neg = df.apply(lambda r: r["emotions"].get("fear",0)+r["emotions"].get("sadness",0)+r["emotions"].get("anger",0)+r["emotions"].get("disgust",0), axis=1)
-df["neg_affect"] = neg
+# Negative affect = fear + sadness + anger + disgust
+df["neg_affect"] = df.apply(
+    lambda r: r["emotions"].get("fear", 0)
+            + r["emotions"].get("sadness", 0)
+            + r["emotions"].get("anger", 0)
+            + r["emotions"].get("disgust", 0),
+    axis=1
+)
 
 col1, col2 = st.columns(2)
 with col1:
-    st.plotly_chart(correlation_scatter(df, x="sleep_hours", y="neg_affect", title="Sleep Hours vs Negative Affect"), use_container_width=True)
+    st.plotly_chart(
+        correlation_scatter(df, x="sleep_hours", y="neg_affect", title="Sleep Hours vs Negative Affect"),
+        use_container_width=True
+    )
 with col2:
-    st.plotly_chart(correlation_scatter(df, x="sleep_quality", y="neg_affect", title="Sleep Quality vs Negative Affect"), use_container_width=True)
+    st.plotly_chart(
+        correlation_scatter(df, x="sleep_quality", y="neg_affect", title="Sleep Quality vs Negative Affect"),
+        use_container_width=True
+    )
 
-# Simple feedback text
+# --- Personalized feedback ---
 st.subheader("Personalized feedback")
-last_n = st.slider("Analyze last N dreams", 3, min(30, len(df)), min(10, len(df)))
-recent = df.tail(last_n)
-avg_neg = recent["neg_affect"].mean() if not recent.empty else 0
-if avg_neg >= 50:
-    st.warning("You've had a run of **fear/sadness/anger** leaning dreams recently. If possible, try winding down earlier, reduce late screens, or consider a brief pre-sleep journaling session.")
-elif avg_neg >= 25:
-    st.info("Mixed emotional tone lately. Light relaxation before bed and consistent sleep times might help tilt dreams positively.")
+
+n_samples = len(df)
+if n_samples < 3:
+    st.info("Add at least 3 dreams to see trend-based feedback.")
 else:
-    st.success("Your recent dreams skew calmer/neutral. Keep steady routines and hydration; you're on a good trend!")
+    max_n = min(30, n_samples)
+    default_n = min(10, n_samples)
+    last_n = st.slider("Analyze last N dreams", 3, max_n, default_n)
+    recent = df.tail(last_n)
+    avg_neg = recent["neg_affect"].mean() if not recent.empty else 0
+
+    if avg_neg >= 50:
+        st.warning("You've had a run of **fear/sadness/anger** leaning dreams. Try winding down earlier, reduce late screens, or a brief pre-sleep journaling session.")
+    elif avg_neg >= 25:
+        st.info("Mixed emotional tone lately. Light relaxation before bed and consistent sleep times may tilt dreams positively.")
+    else:
+        st.success("Your recent dreams skew calmer/neutral. Keep steady routines and hydration; you're on a good trend!")

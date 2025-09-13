@@ -12,7 +12,6 @@ def render_emotion_bar(emotions: dict):
     st.plotly_chart(fig, use_container_width=True)
 
 def emotion_arc_chart(df: pd.DataFrame):
-    # expand each emotion into columns for plotting over time index
     emo_keys = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
     rows = []
     for _, r in df.iterrows():
@@ -40,7 +39,6 @@ def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str):
     return fig
 
 def emotion_distribution_pie(df: pd.DataFrame):
-    # average emotion percentages across dreams
     keys = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
     acc = {k:0.0 for k in keys}
     n = max(len(df), 1)
