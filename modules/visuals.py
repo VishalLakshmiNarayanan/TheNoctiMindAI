@@ -172,6 +172,8 @@ def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str = "Correlat
         pass
 
     fig.update_traces(hovertemplate=f"{x}: "+"%{x}<br>"+f"{y}: "+"%{y}<extra></extra>")
+    fig.update_layout(plot_bgcolor="#ffffff", paper_bgcolor="#ffffff")
+
     return fig
 
 # ------------------------------------------------------------
@@ -248,6 +250,8 @@ def emotion_distribution_pie(data) -> "go.Figure":
         title="Emotion distribution"
     )
     fig.update_traces(hovertemplate="%{label}: %{value:.1f}%<extra></extra>")
+    fig.update_layout(plot_bgcolor="#ffffff", paper_bgcolor="#ffffff")
+
     return fig
 
 # ------------------------------------------------------------
@@ -285,7 +289,7 @@ def emotion_node_graph(emotions: Dict[str, float], blink_top: bool = True) -> go
     circle_trace = go.Scatter(
         x=list(xs)+[xs[0]], y=list(ys)+[ys[0]],
         mode="lines",
-        line=dict(color="rgba(255,255,255,0.15)", width=1, dash="dot"),
+        line=dict(color="rgba(0,0,0,1)", width=1, dash="dot"),
         hoverinfo="skip", showlegend=False,
     )
     base_nodes = go.Scatter(
@@ -309,8 +313,8 @@ def emotion_node_graph(emotions: Dict[str, float], blink_top: bool = True) -> go
         margin=dict(l=10, r=10, t=50, b=10),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(1,1,1,0)",
+        paper_bgcolor="rgba(1,1,1,0)",
         template="plotly_dark",
     )
 
@@ -321,7 +325,7 @@ def emotion_node_graph(emotions: Dict[str, float], blink_top: bool = True) -> go
             xanchor="left", yanchor="top",
             text=f"Highlighting: <b>{top_label}</b>",
             showarrow=False,
-            font=dict(size=12, color="#eaeaea"),
+            font=dict(size=12, color="#080808"),
         )
         return fig
 
@@ -367,7 +371,7 @@ def emotion_node_graph(emotions: Dict[str, float], blink_top: bool = True) -> go
             xanchor="left", yanchor="top",
             pad=dict(r=4, t=4, b=4, l=4),
             bgcolor="rgba(30,30,40,0.6)",
-            bordercolor="rgba(255,255,255,0.2)",
+            bordercolor="rgba(0,0,0,1)",
             borderwidth=1,
         )],
         sliders=[],
@@ -379,9 +383,11 @@ def emotion_node_graph(emotions: Dict[str, float], blink_top: bool = True) -> go
         xanchor="left", yanchor="top",
         text=f"Highlighting: <b>{top_label}</b>",
         showarrow=False,
-        font=dict(size=12, color="#eaeaea"),
+        font=dict(size=12, color="#080808"),
         align="left",
-        bgcolor="rgba(0,0,0,0)",
+        bgcolor="rgba(0,0,0,1)",
     )
+    fig.update_layout(plot_bgcolor="#ffffff", paper_bgcolor="#ffffff")
+
 
     return fig

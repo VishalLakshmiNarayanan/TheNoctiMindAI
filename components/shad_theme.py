@@ -19,27 +19,59 @@ def _inject_css(hide_sidebar: bool):
         f"""
         <style>
           /* Optional: hide sidebar + hamburger */
-          {"[data-testid='stSidebar'],[data-testid='stSidebarNav']{{display:none !important;}}"
-            "[data-testid='stToolbar'] button[kind='header']{{display:none !important;}}"
-            ".main .block-container{{padding-top:0.75rem; max-width:1200px;}}" if hide_sidebar else ""}
+          {"[data-testid='stSidebar'],[data-testid='stSidebarNav']{display:none !important;}"
+            "[data-testid='stToolbar'] button[kind='header']{display:none !important;}"
+            ".main .block-container{padding-top:0.75rem; max-width:1200px;}" if hide_sidebar else ""}
 
-          /* shadcn-like header */
+          /* ======== Light Theme Tokens (shadcn-like) ======== */
+          :root {{
+            --bg: #ffffff;
+            --muted: #f8fafc;            /* card fill */
+            --muted-2: #eef2f7;          /* subtle fill */
+            --border: #e5e7eb;           /* slate-200 */
+            --text: #0f172a;             /* slate-900 */
+            --text-muted: #64748b;       /* slate-500 */
+            --accent: #111827;           /* near-black accent */
+            --ring: rgba(17,24,39,.08);
+            --shadow: 0 1px 2px rgba(16,24,40,0.08), 0 2px 8px rgba(16,24,40,0.06);
+            --radius: 14px;
+          }}
+
+          html, body {{ background: var(--bg); color: var(--text); }}
+
+          /* Header block */
           .nm-header {{
-            background: rgba(255,255,255,.02);
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 16px;
+            background: var(--muted);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
             padding: 18px 16px;
             margin-bottom: 12px;
+            box-shadow: var(--shadow);
           }}
-          .nm-title {{ font-weight: 800; font-size: 1.25rem; margin: 2px 0; }}
-          .nm-sub   {{ opacity: .75; font-size: 0.95rem; }}
+          .nm-title {{ font-weight: 800; font-size: 1.25rem; margin: 2px 0; color: var(--text); }}
+          .nm-sub   {{ color: var(--text-muted); font-size: 0.95rem; }}
 
-          /* Tabs spacing */
+          /* Tabs (shadcn tabs already light; just spacing) */
           .stTabs [data-baseweb="tab-list"] {{ gap: 6px; }}
+
+          /* Generic card */
+          .nm-card {{
+            background: var(--muted);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px;
+            box-shadow: var(--shadow);
+          }}
+
+          /* KPI typography */
+          .nm-kpi-title {{ font-size:13px; color: var(--text-muted); }}
+          .nm-kpi-value {{ font-size:28px; font-weight:800; color: var(--text); }}
+          .nm-kpi-delta {{ font-size:12px; font-weight:700; color: var(--text-muted); }}
         </style>
         """,
         unsafe_allow_html=True,
     )
+
 
 
 # ---------- Header (no buttons) ----------
@@ -97,27 +129,22 @@ def _ROUND_TRIP_ORDER():
 def kpi_card(title: str, value: str, delta: str, col=None):
     target = col if col else st
     with target.container():
-        st.markdown(f"""
-        <div style="
-          background: rgba(255,255,255,.02);
-          border: 1px solid rgba(255,255,255,.08);
-          border-radius: 16px; padding: 18px;">
-          <div style="font-size:13px; opacity:.75;">{title}</div>
-          <div style="font-size:28px; font-weight:800;">{value}</div>
-          <div style="font-size:12px; font-weight:700; opacity:.8;">{delta}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown(
+            f"""
+            <div class="nm-card">
+              <div class="nm-kpi-title">{title}</div>
+              <div class="nm-kpi-value">{value}</div>
+              <div class="nm-kpi-delta">{delta}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 def card(title: str, body_fn, col=None):
     target = col if col else st
     with target.container():
-        st.markdown(
-            '<div style="background:rgba(255,255,255,.02);'
-            'border:1px solid rgba(255,255,255,.08);border-radius:16px; padding:18px;">',
-            unsafe_allow_html=True
-        )
-        st.markdown(f'<div style="font-size:20px; font-weight:800; margin-bottom:8px;">{title}</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="nm-card">', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:20px; font-weight:800; margin-bottom:8px; color:var(--text);">{title}</div>', unsafe_allow_html=True)
         body_fn()
         st.markdown("</div>", unsafe_allow_html=True)
+

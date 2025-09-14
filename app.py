@@ -12,6 +12,13 @@ from modules.auth import (
 # shadcn helpers
 from components.shad_theme import use_page, header, nav_tabs, kpi_card, card
 
+import plotly.express as px
+import plotly.io as pio
+
+pio.templates.default = "plotly_white"
+px.defaults.template = "plotly_white"
+px.defaults.color_discrete_sequence = ["#111827", "#64748b", "#94a3b8", "#0ea5e9", "#22c55e", "#eab308", "#ef4444"]
+
 # ---------- Page / DB / Auth ----------
 use_page("NoctiMind", hide_sidebar=True)   # call ONCE
 init_db()

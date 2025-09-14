@@ -1,0 +1,7 @@
+[theme]
+base="light"
+primaryColor="#111827"              # dark accent for emphasis
+backgroundColor="#ffffff"           # pure white background
+secondaryBackgroundColor="#f8fafc"  # light gray for cards
+textColor="#0f172a"                 # slate-900 text
+font="sans serif"
