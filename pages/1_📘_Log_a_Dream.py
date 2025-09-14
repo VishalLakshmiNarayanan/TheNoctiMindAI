@@ -1,29 +1,83 @@
+# pages/1_📘_Log_a_Dream.py
+from __future__ import annotations
+
+import time
+from typing import Optional, Dict
+
 import streamlit as st
+
+# Auth (login required + user info)
+from modules.auth import require_login, current_user, user_greeting, logout_button
+
+# NLP / LLM / Embeddings
 from modules.nlp import get_embedding, ensure_nltk
 from modules.llm import analyze_dream_llm
-from modules.storage import insert_dream
+
+# Storage (per-user)
+from modules.storage import insert_dream  # expects user_email as first arg (per-user)
+
+# Visuals
 from modules.visuals import render_emotion_bar, emotion_node_graph
 
-# NEW: voice imports (optional)
+# Voice (optional)
 from modules.speech import transcribe_audio_bytes
-from typing import Optional
 
-st.title("📘 Analyze a Dream")
-ensure_nltk()
+from modules.auth import require_login, current_user, user_greeting, logout_button
+require_login("Please sign up or sign in to view this page.")
 
-def _normalize_emotions(emo: dict) -> dict:
-    keys = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
-    total = sum(max(float(emo.get(k, 0)), 0.0) for k in keys)
+from components.ui import render_top_nav
+render_top_nav(hide_sidebar=True)
+
+
+# -------------------------- Helpers --------------------------
+
+def _normalize_emotions(emo: Dict[str, float] | None) -> Dict[str, float]:
+    """
+    Force a consistent 7-emotion distribution as percentages (0..100, sum≈100).
+    Missing keys default to 0, and if total==0 -> neutral=100.
+    """
+    emo = emo or {}
+    keys = ["joy", "sadness", "fear", "anger", "disgust", "surprise", "neutral"]
+    total = 0.0
+    vals = {}
+    for k in keys:
+        try:
+            v = float(emo.get(k, 0.0))
+        except Exception:
+            v = 0.0
+        vals[k] = max(v, 0.0)
+        total += vals[k]
+
     if total <= 0:
         return {k: (100.0 if k == "neutral" else 0.0) for k in keys}
-    return {k: round((max(float(emo.get(k, 0.0)), 0.0) / total) * 100.0, 2) for k in keys}
+
+    return {k: round((vals[k] / total) * 100.0, 2) for k in keys}
+
+def _safe_list(txt_list):
+    if not isinstance(txt_list, list):
+        return []
+    return [str(x) for x in txt_list if isinstance(x, (str, int, float))]
+
+# -------------------------- Page --------------------------
+
+require_login()
+user = current_user()  # {'email': ..., 'name': ...}
+
+st.title("📘 Analyze a Dream")
+#user_greeting()
+#logout_button()
+ensure_nltk()
 
 tab_type, tab_voice = st.tabs(["⌨️ Type", "🎙 Voice"])
 
 # ---- TYPE TAB ----
 with tab_type:
     with st.form("log_form_type", clear_on_submit=False):
-        text = st.text_area("Describe your dream in detail", height=220, placeholder="I was walking through a forest when suddenly...")
+        text = st.text_area(
+            "Describe your dream in detail",
+            height=220,
+            placeholder="I was walking through a forest when suddenly..."
+        )
         sleep_hours = st.number_input("Sleep hours", min_value=0.0, max_value=24.0, value=7.0, step=0.5)
         sleep_quality = st.slider("Sleep quality (1=poor, 5=great)", 1, 5, 3)
         tags = st.text_input("Optional tags (comma separated)", placeholder="exam, chase, travel")
@@ -34,26 +88,40 @@ with tab_type:
             st.error("Please enter your dream text.")
             st.stop()
 
+        # Embedding
         with st.spinner("Embedding dream..."):
             emb = get_embedding(text)
 
+        # LLM pipeline
         with st.spinner("Extracting motifs, emotions, archetype, and reframing (LLM)..."):
             llm_out = analyze_dream_llm(text)
 
-        emo = _normalize_emotions(llm_out["emotions"])
+        # Normalize & sanitize
+        emo = _normalize_emotions(llm_out.get("emotions", {}))
+        motifs = _safe_list(llm_out.get("motifs", []))
+        archetype = str(llm_out.get("archetype", "unknown")) or "unknown"
+        reframed = str(llm_out.get("reframed", ""))
 
+        # Save (PER-USER: pass user email first)
         dream_id = insert_dream(
-            text=text, tags=tags, sleep_hours=float(sleep_hours), sleep_quality=int(sleep_quality),
-            motifs=llm_out["motifs"], archetype=llm_out["archetype"], reframed=llm_out["reframed"],
-            emotions=emo, embedding=emb
+            user_email=user["email"],
+            text=text,
+            tags=tags,
+            sleep_hours=float(sleep_hours),
+            sleep_quality=int(sleep_quality),
+            motifs=motifs,
+            archetype=archetype,
+            reframed=reframed,
+            emotions=emo,
+            embedding=emb
         )
 
         st.success("Dream analyzed and saved!")
         st.subheader("Quick insight")
-        c1, c2 = st.columns([1,1])
+        c1, c2 = st.columns([1, 1])
         with c1:
-            st.write("**Archetype:**", llm_out["archetype"])
-            st.write("**Motifs:**", ", ".join(llm_out["motifs"]) if llm_out["motifs"] else "—")
+            st.write("**Archetype:**", archetype)
+            st.write("**Motifs:**", ", ".join(motifs) if motifs else "—")
         with c2:
             render_emotion_bar(emo)
 
@@ -61,21 +129,20 @@ with tab_type:
         st.plotly_chart(emotion_node_graph(emo), use_container_width=True)
 
         with st.expander("Therapeutic reframing"):
-            st.write(llm_out["reframed"])
+            st.write(reframed)
 
 # ---- VOICE TAB ----
 with tab_voice:
     st.write("Record a quick voice note or upload an audio file, and I’ll transcribe it into the editor.")
 
-    # --- Session-state setup for transcript ---
+    # Keep transcript in session across reruns
     if "voice_text" not in st.session_state:
-        st.session_state.voice_text = ""  # what the text_area shows/edits
+        st.session_state.voice_text = ""
 
-    # helper to update transcript (works across reruns)
-    def _set_transcript(text: str):
-        st.session_state.voice_text = text or ""
+    def _set_transcript(val: str):
+        st.session_state.voice_text = val or ""
 
-    # --- A) Microphone recorder (optional component) ---
+    # A) Microphone recorder (optional component)
     try:
         from streamlit_mic_recorder import mic_recorder
         audio = mic_recorder(
@@ -95,8 +162,12 @@ with tab_voice:
 
     st.divider()
 
-    # --- B) File uploader (wav/mp3/m4a/webm) ---
-    up = st.file_uploader("Or upload an audio file", type=["wav", "mp3", "m4a", "webm"], key="uploader1")
+    # B) File uploader
+    up = st.file_uploader(
+        "Or upload an audio file",
+        type=["wav", "mp3", "m4a", "webm"],
+        key="uploader1"
+    )
     if up is not None:
         raw = up.read()
         if raw:
@@ -105,22 +176,22 @@ with tab_voice:
                 _set_transcript(t)
                 st.success("Transcription ready. You can edit it below.")
 
-    # --- C) Edit transcript and analyze ---
+    # C) Edit transcript and analyze
     st.text_area(
         "Transcript",
-        key="voice_text",               # bind to session_state
+        key="voice_text",
         height=220,
         placeholder="Your transcript will appear here after recording/upload."
     )
 
-    colA, colB = st.columns([1,1])
+    colA, colB = st.columns([1, 1])
     with colA:
         v_sleep_hours = st.number_input("Sleep hours", min_value=0.0, max_value=24.0, value=7.0, step=0.5, key="v_hours")
     with colB:
         v_sleep_quality = st.slider("Sleep quality (1=poor, 5=great)", 1, 5, 3, key="v_quality")
     v_tags = st.text_input("Optional tags (comma separated)", placeholder="exam, chase, travel", key="v_tags")
 
-    if st.button("Analyze & Save (from transcript)", type="primary", use_container_width=False, key="analyze_from_voice"):
+    if st.button("Analyze & Save (from transcript)", type="primary", key="analyze_from_voice"):
         voice_text = (st.session_state.get("voice_text") or "").strip()
         if not voice_text:
             st.error("No transcript text to analyze.")
@@ -132,27 +203,29 @@ with tab_voice:
         with st.spinner("Extracting motifs, emotions, archetype, and reframing (LLM)..."):
             llm_out = analyze_dream_llm(voice_text)
 
-        # normalize emotions (reuse your helper if defined)
-        keys = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
-        emo_raw = llm_out.get("emotions", {})
-        total = sum(max(float(emo_raw.get(k, 0.0)), 0.0) for k in keys)
-        if total <= 0:
-            emo = {k: (100.0 if k == "neutral" else 0.0) for k in keys}
-        else:
-            emo = {k: round((max(float(emo_raw.get(k, 0.0)), 0.0) / total) * 100.0, 2) for k in keys}
+        emo = _normalize_emotions(llm_out.get("emotions", {}))
+        motifs = _safe_list(llm_out.get("motifs", []))
+        archetype = str(llm_out.get("archetype", "unknown")) or "unknown"
+        reframed = str(llm_out.get("reframed", ""))
 
         dream_id = insert_dream(
-            text=voice_text, tags=v_tags, sleep_hours=float(v_sleep_hours), sleep_quality=int(v_sleep_quality),
-            motifs=llm_out.get("motifs", []), archetype=llm_out.get("archetype", "unknown"),
-            reframed=llm_out.get("reframed", ""),
-            emotions=emo, embedding=emb
+            user_email=user["email"],
+            text=voice_text,
+            tags=v_tags,
+            sleep_hours=float(v_sleep_hours),
+            sleep_quality=int(v_sleep_quality),
+            motifs=motifs,
+            archetype=archetype,
+            reframed=reframed,
+            emotions=emo,
+            embedding=emb
         )
 
         st.success("Dream analyzed and saved!")
-        c1, c2 = st.columns([1,1])
+        c1, c2 = st.columns([1, 1])
         with c1:
-            st.write("**Archetype:**", llm_out.get("archetype", "unknown"))
-            st.write("**Motifs:**", ", ".join(llm_out.get("motifs", [])) or "—")
+            st.write("**Archetype:**", archetype)
+            st.write("**Motifs:**", ", ".join(motifs) if motifs else "—")
         with c2:
             render_emotion_bar(emo)
 
@@ -160,4 +233,4 @@ with tab_voice:
         st.plotly_chart(emotion_node_graph(emo), use_container_width=True)
 
         with st.expander("Therapeutic reframing"):
-            st.write(llm_out.get("reframed", ""))
+            st.write(reframed)

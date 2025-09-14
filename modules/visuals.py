@@ -1,134 +1,279 @@
+# modules/visuals.py
+from __future__ import annotations
+import math
+from typing import Dict, Iterable, List, Tuple, Any
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import networkx as nx
 from wordcloud import WordCloud
 
-# ---------- Existing helper charts ----------
-def render_emotion_bar(emotions: dict):
+# ------------------------------------------------------------
+# Emotion configuration
+# ------------------------------------------------------------
+EMOTION_ORDER = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
+EMOTION_PALETTE = {
+    "joy":      "#F9D423",  # warm yellow
+    "sadness":  "#4A90E2",  # blue
+    "fear":     "#9B59B6",  # purple
+    "anger":    "#E74C3C",  # red
+    "disgust":  "#2ECC71",  # green
+    "surprise": "#F5A623",  # orange
+    "neutral":  "#95A5A6",  # gray
+}
+
+def _ordered_items(emotions: Dict[str, float]) -> List[Tuple[str, float]]:
+    """Return (emotion, value) following EMOTION_ORDER and filling missing as 0."""
+    emotions = emotions or {}
+    return [(k, float(emotions.get(k, 0.0))) for k in EMOTION_ORDER]
+
+# ------------------------------------------------------------
+# Emotion breakdown (Bar) – colored by emotion
+# ------------------------------------------------------------
+def render_emotion_bar(emotions: Dict[str, float]):
     import streamlit as st
-    df = pd.DataFrame({"emotion": list(emotions.keys()), "value": list(emotions.values())})
-    fig = px.bar(df, x="emotion", y="value", title="Emotion breakdown (%)", labels={"value":"%"} )
+    data = _ordered_items(emotions)
+    df = pd.DataFrame({
+        "emotion": [k.capitalize() for k, _ in data],
+        "value": [v for _, v in data],
+        "key": [k for k, _ in data],
+    })
+    colors = [EMOTION_PALETTE[k] for k in df["key"]]
+    fig = go.Figure(
+        data=[go.Bar(
+            x=df["emotion"],
+            y=df["value"],
+            marker=dict(color=colors),
+            hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+        )]
+    )
+    fig.update_layout(
+        title="Emotion breakdown (%)",
+        height=300,
+        margin=dict(l=10, r=10, t=40, b=10),
+        xaxis_title="",
+        yaxis_title="%",
+        template="plotly_dark",
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-def emotion_arc_chart(df: pd.DataFrame):
-    emo_keys = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
+# ------------------------------------------------------------
+# Emotion arcs over time – colored by emotion
+# ------------------------------------------------------------
+def emotion_arc_chart(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return go.Figure()
     rows = []
     for _, r in df.iterrows():
         row = {"created_at": r["created_at"]}
-        for k in emo_keys:
-            row[k] = r["emotions"].get(k,0)
+        emo = r.get("emotions") or {}
+        for k in EMOTION_ORDER:
+            row[k] = float(emo.get(k, 0.0))
         rows.append(row)
     wide = pd.DataFrame(rows)
     wide["created_at"] = pd.to_datetime(wide["created_at"])
     long = wide.melt(id_vars="created_at", var_name="emotion", value_name="percent")
-    fig = px.line(long, x="created_at", y="percent", color="emotion", title="Emotion arcs over time")
-    fig.update_traces(mode="lines+markers")
+
+    color_map = {k: EMOTION_PALETTE[k] for k in EMOTION_ORDER}
+    fig = px.line(
+        long, x="created_at", y="percent", color="emotion",
+        color_discrete_map=color_map, title="Emotion arcs over time"
+    )
+    fig.update_traces(mode="lines+markers", hovertemplate="%{legendgroup}: %{y:.1f}%<extra></extra>")
+    fig.update_layout(
+        height=360, template="plotly_dark",
+        margin=dict(l=10, r=10, t=40, b=10),
+        xaxis_title="Time", yaxis_title="%",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0.0)
+    )
     return fig
 
-def wordcloud_image(motifs_series: pd.Series):
-    text = " ".join([m for row in motifs_series if isinstance(row, list) for m in row])
+# ------------------------------------------------------------
+# WordCloud from motifs
+# ------------------------------------------------------------
+def wordcloud_image(motifs_series: Iterable[Iterable[str]]):
+    text = " ".join([m for row in motifs_series if isinstance(row, (list, tuple)) for m in row])
     if not text.strip():
         text = "dream"
     wc = WordCloud(width=1000, height=400, background_color="white").generate(text)
-    img = wc.to_image()
-    return img
+    return wc.to_image()
 
-def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str):
+# ------------------------------------------------------------
+# Correlation scatter with trendline
+# ------------------------------------------------------------
+def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str = "") -> go.Figure:
     fig = px.scatter(df, x=x, y=y, trendline="ols", title=title)
+    fig.update_layout(
+        template="plotly_dark",
+        height=300,
+        margin=dict(l=10, r=10, t=40, b=10),
+        xaxis_title=x.replace("_", " ").title(),
+        yaxis_title=y.replace("_", " ").title(),
+    )
     return fig
 
-def emotion_distribution_pie(df: pd.DataFrame):
-    keys = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
-    acc = {k:0.0 for k in keys}
-    n = max(len(df), 1)
+# ------------------------------------------------------------
+# Emotion distribution (Pie) – colored by emotion
+# ------------------------------------------------------------
+def emotion_distribution_pie(df: pd.DataFrame) -> go.Figure:
+    if df.empty:
+        return go.Figure()
+    totals = {k: 0.0 for k in EMOTION_ORDER}
+    cnt = 0
     for _, r in df.iterrows():
-        for k in keys:
-            acc[k] += r["emotions"].get(k,0.0)
-    acc = {k: v / n for k,v in acc.items()}
-    p = pd.DataFrame({"emotion": list(acc.keys()), "value": list(acc.values())})
-    fig = px.pie(p, names="emotion", values="value", title="Avg emotion mix")
+        emo = r.get("emotions") or {}
+        if isinstance(emo, dict) and emo:
+            for k in EMOTION_ORDER:
+                totals[k] += float(emo.get(k, 0.0))
+            cnt += 1
+    if cnt > 0:
+        for k in totals:
+            totals[k] /= cnt
+    labels = [k.capitalize() for k in EMOTION_ORDER]
+    values = [totals[k] for k in EMOTION_ORDER]
+    colors = [EMOTION_PALETTE[k] for k in EMOTION_ORDER]
+    fig = go.Figure(go.Pie(labels=labels, values=values, marker=dict(colors=colors), hole=0.35))
+    fig.update_layout(
+        title="Avg emotion mix",
+        height=320,
+        template="plotly_dark",
+        margin=dict(l=10, r=10, t=40, b=10)
+    )
     return fig
 
-# ---------- NEW: Emotion Map (node graph) ----------
-_DEFAULT_EDGES = [
-    ("joy","surprise"),
-    ("joy","neutral"),
-    ("sadness","fear"),
-    ("sadness","anger"),
-    ("fear","surprise"),
-    ("anger","disgust"),
-    ("disgust","fear"),
-    ("neutral","joy"),
-    ("neutral","sadness"),
-]
-_EMO_KEYS = ["joy","sadness","fear","anger","disgust","surprise","neutral"]
-
-def emotion_node_graph(emotions: dict):
+# ------------------------------------------------------------
+# Emotion Map (circular) – top emotion blinks
+# ------------------------------------------------------------
+def emotion_node_graph(emotions: Dict[str, float], blink_top: bool = True) -> go.Figure:
     """
-    Build a simple network of core emotions. Node size = intensity, opacity = intensity.
-    Lights up nodes with nonzero intensity; others are dimmed.
+    Circular node map:
+      - Color = palette per emotion
+      - Size = percentage
+      - Top emotion blinks (opacity + outline width)
+      - ▶ button moved to top-left, with label showing which emotion is highlighted
     """
-    # sanitize
-    vals = {k: float(max(0.0, emotions.get(k, 0.0))) for k in _EMO_KEYS}
-    total = sum(vals.values()) or 1.0
-    # Normalize to 0..100 for display, preserve 0s
-    vals = {k: 100.0 * v / total if total else 0.0 for k, v in vals.items()}
+    items = _ordered_items(emotions)
+    keys = [k for k, _ in items]
+    labels = [k.capitalize() for k in keys]
+    vals = np.array([v for _, v in items], dtype=float)
 
-    G = nx.Graph()
-    for k in _EMO_KEYS:
-        G.add_node(k, weight=vals[k])
-    G.add_edges_from(_DEFAULT_EDGES)
+    n = len(items)
+    if n == 0:
+        return go.Figure()
 
-    # layout
-    pos = nx.spring_layout(G, seed=7, k=0.9)
+    # Circle layout
+    R = 1.0
+    angles = np.linspace(0, 2*math.pi, n, endpoint=False)
+    xs = R * np.cos(angles)
+    ys = R * np.sin(angles)
 
-    # node styling
-    xs, ys, sizes, texts, opacities = [], [], [], [], []
-    for n, p in pos.items():
-        xs.append(p[0]); ys.append(p[1])
-        size = 20 + (vals[n] * 0.8)  # 20..100-ish
-        sizes.append(size)
-        texts.append(f"{n}: {vals[n]:.1f}%")
-        opacities.append(0.25 if vals[n] < 1e-3 else 0.95)
+    sizes = 12 + 0.6 * vals   # visual size
+    colors = [EMOTION_PALETTE[k] for k in keys]
+    top_idx = int(np.argmax(vals)) if len(vals) else 0
+    top_label = labels[top_idx]
 
-    node_trace = go.Scatter(
-        x=xs, y=ys, mode='markers+text',
-        text=[k.capitalize() for k in _EMO_KEYS],
+    # Base traces
+    circle_trace = go.Scatter(
+        x=list(xs)+[xs[0]], y=list(ys)+[ys[0]],
+        mode="lines",
+        line=dict(color="rgba(255,255,255,0.15)", width=1, dash="dot"),
+        hoverinfo="skip", showlegend=False,
+    )
+    base_nodes = go.Scatter(
+        x=xs, y=ys, mode="markers+text",
+        text=[f"{labels[i]}<br>{vals[i]:.0f}%" for i in range(n)],
         textposition="top center",
         marker=dict(
             size=sizes,
-            color=vals_to_color([vals[k] for k in _EMO_KEYS]),
-            opacity=opacities,
-            line=dict(width=2, color="rgba(255,255,255,0.75)")
+            color=colors,
+            line=dict(color="white", width=[3 if i == top_idx else 1 for i in range(n)]),
+            opacity=1.0
         ),
-        hovertext=texts,
-        hoverinfo="text"
+        hovertemplate="%{text}<extra></extra>",
+        showlegend=False,
     )
 
-    # edges as line segments
-    ex, ey = [], []
-    for u, v in _DEFAULT_EDGES:
-        ex += [pos[u][0], pos[v][0], None]
-        ey += [pos[u][1], pos[v][1], None]
-    edge_trace = go.Scatter(x=ex, y=ey, mode='lines', line=dict(width=1, color='rgba(200,200,220,0.35)'), hoverinfo='none')
-
-    fig = go.Figure(data=[edge_trace, node_trace])
+    fig = go.Figure(data=[circle_trace, base_nodes])
     fig.update_layout(
         title="Emotion Map",
-        showlegend=False,
-        xaxis=dict(visible=False), yaxis=dict(visible=False),
-        margin=dict(l=10,r=10,t=40,b=10),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
+        height=420,
+        margin=dict(l=10, r=10, t=50, b=10),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        template="plotly_dark",
     )
-    return fig
 
-def vals_to_color(values):
-    """Map 0..100 to a purple→pink ramp (no explicit color names; numeric RGBA)."""
-    colors = []
-    for v in values:
-        # 0 → 120; 100 → 255
-        c = int(120 + (v/100.0) * 135)
-        colors.append(f"rgba({c-60},{c-40},{255},0.95)")
-    return colors
+    if not blink_top:
+        # Put the label even if we don't animate
+        fig.add_annotation(
+            xref="paper", yref="paper", x=0.12, y=0.98,
+            xanchor="left", yanchor="top",
+            text=f"Highlighting: <b>{top_label}</b>",
+            showarrow=False,
+            font=dict(size=12, color="#eaeaea"),
+        )
+        return fig
+
+    # Animation frames for blinking the top emotion
+    def frame(marker_opacity: float, line_width_on: float) -> go.Frame:
+        lw = [line_width_on if i == top_idx else 1 for i in range(n)]
+        opac = [marker_opacity if i == top_idx else 1.0 for i in range(n)]
+        return go.Frame(
+            data=[
+                circle_trace,
+                go.Scatter(
+                    x=xs, y=ys, mode="markers+text",
+                    text=[f"{labels[i]}<br>{vals[i]:.0f}%" for i in range(n)],
+                    textposition="top center",
+                    marker=dict(size=sizes, color=colors, line=dict(color="white", width=lw), opacity=opac),
+                    hovertemplate="%{text}<extra></extra>",
+                    showlegend=False,
+                )
+            ]
+        )
+
+    fig.frames = [
+        frame(marker_opacity=1.0, line_width_on=6),   # ON (bold + opaque)
+        frame(marker_opacity=0.2, line_width_on=1),   # OFF (dim + thin)
+    ]
+
+    # Move the ▶ button away from the plot and add a label next to it
+    fig.update_layout(
+        updatemenus=[dict(
+            type="buttons",
+            showactive=False,
+            buttons=[dict(
+                label="▶",
+                method="animate",
+                args=[None, dict(
+                    frame=dict(duration=500, redraw=True),
+                    transition=dict(duration=0),
+                    fromcurrent=True,
+                    mode="immediate"
+                )],
+            )],
+            x=0.02, y=0.98,             # <-- top-left of the full figure ("paper" coords)
+            xanchor="left", yanchor="top",
+            pad=dict(r=4, t=4, b=4, l=4),
+            bgcolor="rgba(30,30,40,0.6)",
+            bordercolor="rgba(255,255,255,0.2)",
+            borderwidth=1,
+        )],
+        sliders=[],
+    )
+
+    # Text beside the button
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0.12, y=0.98,
+        xanchor="left", yanchor="top",
+        text=f"Highlighting: <b>{top_label}</b>",
+        showarrow=False,
+        font=dict(size=12, color="#eaeaea"),
+        align="left",
+        bgcolor="rgba(0,0,0,0)",
+    )
+
+    return fig
