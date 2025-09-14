@@ -121,13 +121,34 @@ def require_login(message: str = "Please sign in or sign up to view this page.",
     ensure_session_keys()
     if st.session_state["auth_user"] is None:
         st.warning(message)
+
         if show_forms:
             mode = st.segmented_control("Mode", options=["Sign In", "Sign Up"], default="Sign In")
             if mode == "Sign In":
-                login_form()
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                if st.button("Sign In"):
+                    ok, msg, user = signin(email, password)
+                    if ok:
+                        st.session_state["auth_user"] = user
+                        st.success("Welcome back!")
+                        st.rerun()
+                    else:
+                        st.error(msg)
             else:
-                signup_form()
+                name = st.text_input("Name")
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                if st.button("Create account"):
+                    ok, msg = signup(name, email, password)
+                    if ok:
+                        st.success("Account created. Please sign in.")
+                    else:
+                        st.error(msg)
+
+        # 👇 CRUCIAL: do not continue rendering the page unauthenticated
         st.stop()
+
 def gate_page(page_title: str = "This page requires an account", message: str = "Please sign in or sign up to view this page."):
     st.title(page_title)
     require_login(message=message, show_forms=True)

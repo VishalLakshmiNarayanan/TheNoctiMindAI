@@ -102,15 +102,48 @@ def wordcloud_image(motifs_series: Iterable[Iterable[str]]):
 # ------------------------------------------------------------
 # Correlation scatter with trendline
 # ------------------------------------------------------------
-def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str = "") -> go.Figure:
-    fig = px.scatter(df, x=x, y=y, trendline="ols", title=title)
-    fig.update_layout(
-        template="plotly_dark",
-        height=300,
-        margin=dict(l=10, r=10, t=40, b=10),
-        xaxis_title=x.replace("_", " ").title(),
-        yaxis_title=y.replace("_", " ").title(),
-    )
+def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str = "Correlation"):
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    # Base scatter
+    fig = px.scatter(df, x=x, y=y, title=title)
+
+    # Lightweight OLS via NumPy (no statsmodels dependency)
+    try:
+        xs = pd.to_numeric(df[x], errors="coerce").to_numpy()
+        ys = pd.to_numeric(df[y], errors="coerce").to_numpy()
+        mask = np.isfinite(xs) & np.isfinite(ys)
+        xs = xs[mask]
+        ys = ys[mask]
+
+        if xs.size >= 2:
+            # slope, intercept for y = m*x + b
+            slope, intercept = np.polyfit(xs, ys, 1)
+            xline = np.linspace(xs.min(), xs.max(), 100)
+            yline = slope * xline + intercept
+
+            fig.add_trace(
+                go.Scatter(
+                    x=xline,
+                    y=yline,
+                    mode="lines",
+                    name="Trendline",
+                    hovertemplate="Trend: %{y:.3f}<extra></extra>"
+                )
+            )
+
+            # R^2 for context
+            yhat = slope * xs + intercept
+            ss_res = np.sum((ys - yhat) ** 2)
+            ss_tot = np.sum((ys - ys.mean()) ** 2)
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+            fig.update_layout(title=f"{title} (R²={r2:.3f})")
+    except Exception:
+        # If anything goes wrong, just show the scatter without a line
+        pass
+
+    fig.update_traces(hovertemplate=f"{x}: "+"%{x}<br>"+f"{y}: "+"%{y}<extra></extra>")
     return fig
 
 # ------------------------------------------------------------

@@ -16,7 +16,9 @@ from modules.storage import fetch_dreams_dataframe
 from modules.visuals import correlation_scatter, emotion_distribution_pie
 
 # ---------- Page ----------
-user = current_user()  # {'email': ..., 'name': ...}
+user = current_user() 
+if not user:
+    st.stop() # {'email': ..., 'name': ...}
 st.title("🧭 Insights")
 
 # Pull only THIS user's dreams

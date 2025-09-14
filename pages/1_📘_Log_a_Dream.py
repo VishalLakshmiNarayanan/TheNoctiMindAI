@@ -61,7 +61,9 @@ def _safe_list(txt_list):
 # -------------------------- Page --------------------------
 
 require_login()
-user = current_user()  # {'email': ..., 'name': ...}
+user = current_user() 
+if not user:
+    st.stop() # {'email': ..., 'name': ...}
 
 st.title("📘 Analyze a Dream")
 #user_greeting()

@@ -24,7 +24,9 @@ render_top_nav(hide_sidebar=True)
 # -------------------------- Page --------------------------
 
 require_login()
-user = current_user()  # {'email': ..., 'name': ...}
+user = current_user()
+if not user:
+    st.stop()  # {'email': ..., 'name': ...}
 
 st.title("📊 History")
 #user_greeting()

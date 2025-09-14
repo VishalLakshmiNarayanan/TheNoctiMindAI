@@ -20,6 +20,8 @@ render_top_nav(hide_sidebar=True)
 
 require_login()
 user = current_user()
+if not user:
+    st.stop()
 
 st.title("⚙️ Settings")
 #user_greeting()
