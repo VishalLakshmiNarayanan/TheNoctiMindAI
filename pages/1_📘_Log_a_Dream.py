@@ -1,15 +1,14 @@
 import streamlit as st
-import pandas as pd
 from modules.nlp import get_embedding, ensure_nltk
 from modules.llm import analyze_dream_llm
 from modules.storage import insert_dream
-from modules.visuals import render_emotion_bar
+from modules.visuals import render_emotion_bar, emotion_node_graph
 
-st.title("📘 Log a Dream")
+st.title("📘 Analyze a Dream")
 ensure_nltk()
 
 with st.form("log_form", clear_on_submit=False):
-    text = st.text_area("Describe your dream in detail", height=220, placeholder="I was running through a maze...")
+    text = st.text_area("Describe your dream in detail", height=220, placeholder="I was walking through a forest when suddenly...")
     sleep_hours = st.number_input("Sleep hours", min_value=0.0, max_value=24.0, value=7.0, step=0.5)
     sleep_quality = st.slider("Sleep quality (1=poor, 5=great)", 1, 5, 3)
     tags = st.text_input("Optional tags (comma separated)", placeholder="exam, chase, travel")
@@ -26,7 +25,7 @@ if submitted:
     with st.spinner("Extracting motifs, emotions, archetype, and reframing (LLM)..."):
         llm_out = analyze_dream_llm(text)
 
-    # Normalize emotions to avoid NaN / sum!=100 issues
+    # Normalize emotions
     emo = llm_out["emotions"]
     total = sum(max(v, 0) for v in emo.values())
     if total <= 0:
@@ -35,15 +34,9 @@ if submitted:
         emo = {k: round((max(v, 0)/total)*100.0, 2) for k,v in emo.items()}
 
     dream_id = insert_dream(
-        text=text,
-        tags=tags,
-        sleep_hours=float(sleep_hours),
-        sleep_quality=int(sleep_quality),
-        motifs=llm_out["motifs"],
-        archetype=llm_out["archetype"],
-        reframed=llm_out["reframed"],
-        emotions=emo,
-        embedding=emb
+        text=text, tags=tags, sleep_hours=float(sleep_hours), sleep_quality=int(sleep_quality),
+        motifs=llm_out["motifs"], archetype=llm_out["archetype"], reframed=llm_out["reframed"],
+        emotions=emo, embedding=emb
     )
 
     st.success("Dream analyzed and saved!")
@@ -54,6 +47,9 @@ if submitted:
         st.write("**Motifs:**", ", ".join(llm_out["motifs"]) if llm_out["motifs"] else "—")
     with col2:
         render_emotion_bar(emo)
+
+    st.subheader("Emotion Map")
+    st.plotly_chart(emotion_node_graph(emo), use_container_width=True)
 
     with st.expander("Therapeutic reframing"):
         st.write(llm_out["reframed"])

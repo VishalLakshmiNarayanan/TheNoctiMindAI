@@ -2,77 +2,95 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from modules.storage import fetch_dreams_dataframe
-from modules.visuals import emotion_arc_chart, wordcloud_image
-from sklearn.cluster import KMeans
+from modules.visuals import emotion_arc_chart, wordcloud_image, emotion_node_graph
 
-st.title("📊 History & Similarity")
+st.title("📊 History")
 
 df = fetch_dreams_dataframe()
 if df.empty:
-    st.info("No dreams yet. Log one from the **Log a Dream** page.")
+    st.info("No dreams yet. Log one from the **Analyze** page.")
     st.stop()
 
-# Basic table
-st.subheader("Your Dream Log")
-st.dataframe(
-    df[["created_at","archetype","top_emotion","sleep_hours","sleep_quality","motifs","preview"]]
-      .sort_values("created_at", ascending=False),
-    use_container_width=True
-)
+# --- Styles for cards/buttons ---
+st.markdown("""
+<style>
+.card {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px; padding: 16px 18px; margin-bottom: 14px;
+}
+.badge {
+  display:inline-block; padding: 4px 10px; border-radius: 999px;
+  font-size:12px; font-weight:700; margin-right:6px; background: rgba(255,255,255,.12);
+}
+.btn {
+  padding: 6px 10px; border-radius: 10px; font-weight:700; border:1px solid rgba(255,255,255,.2);
+  background: rgba(255,255,255,.06); color: #eaeaff; text-decoration: none; margin-left: 6px;
+}
+.detail {
+  background: rgba(0,0,0,.35);
+  border: 1px dashed rgba(255,255,255,.2);
+  border-radius: 14px; padding: 14px; margin-top: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# Emotion arcs over time
-st.subheader("Emotion arcs over time")
-st.plotly_chart(emotion_arc_chart(df), use_container_width=True)
+# --- Summary visuals ---
+with st.expander("Overview charts", expanded=True):
+    colA, colB = st.columns([2,1])
+    with colA:
+        st.plotly_chart(emotion_arc_chart(df), use_container_width=True)
+    with colB:
+        img = wordcloud_image(df["motifs"])
+        st.image(img, caption="Motif cloud", use_column_width=True)
 
-# Motif cloud
-st.subheader("Motif cloud")
-img = wordcloud_image(df["motifs"])
-st.image(img, caption="Frequent motifs")
+# --- Card list with per-dream VIEW ---
+if "view_id" not in st.session_state:
+    st.session_state.view_id = None
 
-# --- Similarity grouping (safe for small N) ---
-st.subheader("Similarity groups")
-n_samples = len(df)
+for i, row in df.sort_values("created_at", ascending=False).iterrows():
+    created = pd.to_datetime(row["created_at"]).strftime("%B %d, %Y %I:%M %p")
+    pos_em = row["top_emotion"].capitalize()
+    arche = row["archetype"].capitalize() if row["archetype"] else "Unknown"
 
-if n_samples < 2:
-    st.info("Add at least one more dream to compute similarity clusters.")
-    df["cluster"] = 0  # single cluster for display consistency
-    st.dataframe(df[["created_at","top_emotion","archetype","preview"]]
-                 .sort_values("created_at", ascending=False),
-                 use_container_width=True)
-else:
-    embs = np.vstack(df["embedding"].to_list())
-    # k slider: 1..min(10, n_samples)
-    k_max = min(10, n_samples)
-    k = st.slider("Number of similarity clusters (k)", 1, k_max, min(4, k_max))
-    # ensure k <= n_samples
-    if k > n_samples:
-        k = n_samples
+    st.markdown(f"""
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:800;font-size:18px;">{created}</div>
+          <div style="opacity:.85;margin-top:2px;">{row["preview"]}</div>
+          <div style="margin-top:8px;">
+            <span class="badge">{arche}</span>
+            <span class="badge">{pos_em}</span>
+          </div>
+        </div>
+        <div>
+    """, unsafe_allow_html=True)
 
-    km = KMeans(n_clusters=k, n_init="auto", random_state=42)
-    labels = km.fit_predict(embs)
-    df["cluster"] = labels
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("👁 View", key=f"view_{row['id']}"):
+            st.session_state.view_id = row["id"]
+    with col2:
+        if st.button("🗑 Delete", key=f"del_{row['id']}"):
+            st.warning("Delete not implemented in this view. (Ask if you want me to add it.)")
 
-    for c in sorted(df["cluster"].unique()):
-        sub = df[df["cluster"] == c]
-        st.markdown(f"### Group {c} · {len(sub)} dreams")
-        rep_em = sub["top_emotion"].mode().iat[0] if not sub.empty else "—"
-        rep_arch = sub["archetype"].mode().iat[0] if not sub.empty else "—"
-        st.caption(f"Dominant emotion: **{rep_em}** · Dominant archetype: **{rep_arch}**")
-        st.dataframe(sub[["created_at","top_emotion","archetype","preview"]]
-                     .sort_values("created_at", ascending=False),
-                     use_container_width=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
-# Group by Emotion / Archetype
-st.subheader("Group by Emotion / Archetype")
-tab1, tab2 = st.tabs(["By Emotion", "By Archetype"])
-with tab1:
-    for em in sorted(df["top_emotion"].unique()):
-        sub = df[df["top_emotion"] == em].sort_values("created_at", ascending=False)
-        st.markdown(f"#### {em} · {len(sub)}")
-        st.dataframe(sub[["created_at","archetype","preview"]], use_container_width=True)
-
-with tab2:
-    for arch in sorted(df["archetype"].unique()):
-        sub = df[df["archetype"] == arch].sort_values("created_at", ascending=False)
-        st.markdown(f"#### {arch} · {len(sub)}")
-        st.dataframe(sub[["created_at","top_emotion","preview"]], use_container_width=True)
+    # --- Detail view for this card ---
+    if st.session_state.view_id == row["id"]:
+        with st.container():
+            st.markdown('<div class="detail">', unsafe_allow_html=True)
+            tabs = st.tabs(["Overview","Emotions","Archetype","Reframe"])
+            with tabs[0]:
+                st.write("**Dream Text**")
+                st.write(row["text"])
+                st.write("**Tags:**", row["tags"] or "—")
+                st.write("**Sleep:**", f"{row['sleep_hours']}h · quality {row['sleep_quality']}/5")
+            with tabs[1]:
+                st.plotly_chart(emotion_node_graph(row["emotions"]), use_container_width=True)
+            with tabs[2]:
+                st.write("**Top Archetype:**", row["archetype"].capitalize() if row["archetype"] else "—")
+            with tabs[3]:
+                st.write(row["reframed"] or "—")
+            st.markdown('</div>', unsafe_allow_html=True)
