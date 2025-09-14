@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from wordcloud import WordCloud
+from wordcloud import WordCloud, STOPWORDS
 
 # ------------------------------------------------------------
 # Emotion configuration
@@ -92,12 +92,40 @@ def emotion_arc_chart(df: pd.DataFrame) -> go.Figure:
 # ------------------------------------------------------------
 # WordCloud from motifs
 # ------------------------------------------------------------
-def wordcloud_image(motifs_series: Iterable[Iterable[str]]):
-    text = " ".join([m for row in motifs_series if isinstance(row, (list, tuple)) for m in row])
-    if not text.strip():
-        text = "dream"
-    wc = WordCloud(width=1000, height=400, background_color="white").generate(text)
-    return wc.to_image()
+
+
+def wordcloud_image(texts) -> "PIL.Image.Image":
+    """
+    Build a word cloud from a list of strings.
+    - Adds domain stopwords to avoid 'dream' dominating.
+    - Returns a PIL image you can st.image(..., use_container_width=True).
+    """
+    # Normalize input -> one big string
+    if isinstance(texts, (list, tuple)):
+        corpus = " ".join([str(t or "") for t in texts])
+    elif isinstance(texts, str):
+        corpus = texts
+    else:
+        corpus = ""
+
+    # Enrich stopwords – tune as needed
+    extra_stops = {
+        "dream", "dreams", "like", "really", "just", "one", "get", "got",
+        "see", "saw", "go", "went", "feel", "felt", "know", "think",
+        "wake", "woke", "woken", "night", "day", "time"
+    }
+    stops = STOPWORDS.union(extra_stops)
+
+    wc = WordCloud(
+        width=1000,
+        height=500,
+        background_color="white",
+        stopwords=stops,
+        collocations=False,   # prevents bigrams like "dream dream"
+        prefer_horizontal=0.95,
+    )
+    return wc.generate(corpus).to_image()
+
 
 # ------------------------------------------------------------
 # Correlation scatter with trendline
@@ -149,30 +177,77 @@ def correlation_scatter(df: pd.DataFrame, x: str, y: str, title: str = "Correlat
 # ------------------------------------------------------------
 # Emotion distribution (Pie) – colored by emotion
 # ------------------------------------------------------------
-def emotion_distribution_pie(df: pd.DataFrame) -> go.Figure:
-    if df.empty:
-        return go.Figure()
-    totals = {k: 0.0 for k in EMOTION_ORDER}
-    cnt = 0
-    for _, r in df.iterrows():
-        emo = r.get("emotions") or {}
-        if isinstance(emo, dict) and emo:
-            for k in EMOTION_ORDER:
-                totals[k] += float(emo.get(k, 0.0))
-            cnt += 1
-    if cnt > 0:
-        for k in totals:
-            totals[k] /= cnt
-    labels = [k.capitalize() for k in EMOTION_ORDER]
-    values = [totals[k] for k in EMOTION_ORDER]
-    colors = [EMOTION_PALETTE[k] for k in EMOTION_ORDER]
-    fig = go.Figure(go.Pie(labels=labels, values=values, marker=dict(colors=colors), hole=0.35))
-    fig.update_layout(
-        title="Avg emotion mix",
-        height=320,
-        template="plotly_dark",
-        margin=dict(l=10, r=10, t=40, b=10)
+def emotion_distribution_pie(data) -> "go.Figure":
+    """
+    Build a pie chart for emotion distribution.
+
+    Accepts:
+      - dict: {"joy": %, "sadness": %, ...}
+      - DataFrame: with 'emotions' column (dict per row), or per-emotion columns
+      - list[dict]: list of emotion dicts
+
+    Returns:
+      plotly.graph_objects.Figure
+    """
+    import plotly.express as px
+
+    keys = EMOTION_ORDER
+
+    # ---- Normalize input into a list of dicts ----
+    items = []
+
+    if isinstance(data, dict):
+        items = [data]
+
+    elif isinstance(data, pd.DataFrame):
+        if "emotions" in data.columns:
+            items = [e for e in data["emotions"].dropna().tolist() if isinstance(e, dict)]
+        else:
+            # Fall back: try to read columns directly if present
+            for _, row in data.iterrows():
+                d = {k: float(row.get(k, 0.0)) if k in row else 0.0 for k in keys}
+                items.append(d)
+
+    elif isinstance(data, (list, tuple)):
+        items = [e for e in data if isinstance(e, dict)]
+
+    # ---- Compute average distribution ----
+    sums = {k: 0.0 for k in keys}
+    n = 0
+    for em in items:
+        for k in keys:
+            try:
+                sums[k] += float(em.get(k, 0.0))
+            except Exception:
+                pass
+        n += 1
+
+    if n == 0:
+        avg = {k: (100.0 if k == "neutral" else 0.0) for k in keys}
+    else:
+        avg = {k: round(sums[k] / n, 4) for k in keys}
+
+    # Optional: re-normalize to sum ~100 if desired
+    total = sum(avg.values())
+    if total > 0:
+        avg = {k: (v / total) * 100.0 for k, v in avg.items()}
+
+    # ---- Build pie ----
+    df_plot = pd.DataFrame({"emotion": [k.capitalize() for k in keys],
+                            "key": keys,
+                            "value": [avg[k] for k in keys]})
+    color_map = {k: EMOTION_PALETTE[k] for k in keys}
+
+    fig = px.pie(
+        df_plot,
+        names="emotion",
+        values="value",
+        color="key",
+        color_discrete_map=color_map,
+        hole=0.35,
+        title="Emotion distribution"
     )
+    fig.update_traces(hovertemplate="%{label}: %{value:.1f}%<extra></extra>")
     return fig
 
 # ------------------------------------------------------------

@@ -15,3 +15,7 @@ networkx>=3.2
 streamlit-mic-recorder>=0.0.8
 soundfile>=0.12
 statsmodels>=0.14.2
+streamlit-shadcn-ui>=0.1.9
+streamlit-js-eval>=0.1.7
+pytz>=2024.1
+

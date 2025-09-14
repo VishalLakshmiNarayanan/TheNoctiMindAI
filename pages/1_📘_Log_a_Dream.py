@@ -6,31 +6,44 @@ from typing import Optional, Dict
 
 import streamlit as st
 
-# Auth (login required + user info)
-from modules.auth import require_login, current_user, user_greeting, logout_button
+# -------- Auth (login required + user info) --------
+from modules.auth import require_login, current_user
 
-# NLP / LLM / Embeddings
+# -------- NLP / LLM / Embeddings --------
 from modules.nlp import get_embedding, ensure_nltk
 from modules.llm import analyze_dream_llm
 
-# Storage (per-user)
+# -------- Storage (per-user) --------
 from modules.storage import insert_dream  # expects user_email as first arg (per-user)
 
-# Visuals
+# -------- Visuals --------
 from modules.visuals import render_emotion_bar, emotion_node_graph
 
-# Voice (optional)
+# -------- Voice (optional) --------
 from modules.speech import transcribe_audio_bytes
 
-from modules.auth import require_login, current_user, user_greeting, logout_button
+# -------- shadcn helpers --------
+from components.shad_theme import use_page, header, nav_tabs, card
+
+
+# -------------------------- Page Shell --------------------------
+use_page("Analyze · NoctiMind", hide_sidebar=True)
 require_login("Please sign up or sign in to view this page.")
+user = current_user()
+if not user:
+    st.stop()
 
-from components.ui import render_top_nav
-render_top_nav(hide_sidebar=True)
+header()
+nav_tabs("Dream Logs")
+      # keep the same tab naming vibe
+# (Optional) route on tab:
+# if active == "Overview": st.switch_page("app.py")
+# if active == "Analytics": st.switch_page("pages/2_📊_History.py")
+# if active == "Reports": st.switch_page("pages/3_🧭_Insights.py")
 
+ensure_nltk()
 
 # -------------------------- Helpers --------------------------
-
 def _normalize_emotions(emo: Dict[str, float] | None) -> Dict[str, float]:
     """
     Force a consistent 7-emotion distribution as percentages (0..100, sum≈100).
@@ -58,83 +71,76 @@ def _safe_list(txt_list):
         return []
     return [str(x) for x in txt_list if isinstance(x, (str, int, float))]
 
-# -------------------------- Page --------------------------
-
-require_login()
-user = current_user() 
-if not user:
-    st.stop() # {'email': ..., 'name': ...}
-
-st.title("📘 Analyze a Dream")
-#user_greeting()
-#logout_button()
-ensure_nltk()
-
-tab_type, tab_voice = st.tabs(["⌨️ Type", "🎙 Voice"])
-
-# ---- TYPE TAB ----
-with tab_type:
+# -------------------------- TYPE CARD --------------------------
+def _type_card_body():
     with st.form("log_form_type", clear_on_submit=False):
         text = st.text_area(
             "Describe your dream in detail",
             height=220,
             placeholder="I was walking through a forest when suddenly..."
         )
-        sleep_hours = st.number_input("Sleep hours", min_value=0.0, max_value=24.0, value=7.0, step=0.5)
-        sleep_quality = st.slider("Sleep quality (1=poor, 5=great)", 1, 5, 3)
+        c1, c2 = st.columns(2)
+        with c1:
+            sleep_hours = st.number_input("Sleep hours", min_value=0.0, max_value=24.0, value=7.0, step=0.5)
+        with c2:
+            sleep_quality = st.slider("Sleep quality (1=poor, 5=great)", 1, 5, 3)
+
         tags = st.text_input("Optional tags (comma separated)", placeholder="exam, chase, travel")
         submitted = st.form_submit_button("Analyze & Save")
 
-    if submitted:
-        if not text.strip():
-            st.error("Please enter your dream text.")
-            st.stop()
+    if not submitted:
+        return
 
-        # Embedding
-        with st.spinner("Embedding dream..."):
-            emb = get_embedding(text)
+    if not text.strip():
+        st.error("Please enter your dream text.")
+        st.stop()
 
-        # LLM pipeline
-        with st.spinner("Extracting motifs, emotions, archetype, and reframing (LLM)..."):
-            llm_out = analyze_dream_llm(text)
+    # Embedding
+    with st.spinner("Embedding dream..."):
+        emb = get_embedding(text)
 
-        # Normalize & sanitize
-        emo = _normalize_emotions(llm_out.get("emotions", {}))
-        motifs = _safe_list(llm_out.get("motifs", []))
-        archetype = str(llm_out.get("archetype", "unknown")) or "unknown"
-        reframed = str(llm_out.get("reframed", ""))
+    # LLM pipeline
+    with st.spinner("Extracting motifs, emotions, archetype, and reframing (LLM)..."):
+        llm_out = analyze_dream_llm(text)
 
-        # Save (PER-USER: pass user email first)
-        dream_id = insert_dream(
-            user_email=user["email"],
-            text=text,
-            tags=tags,
-            sleep_hours=float(sleep_hours),
-            sleep_quality=int(sleep_quality),
-            motifs=motifs,
-            archetype=archetype,
-            reframed=reframed,
-            emotions=emo,
-            embedding=emb
-        )
+    # Normalize & sanitize
+    emo = _normalize_emotions(llm_out.get("emotions", {}))
+    motifs = _safe_list(llm_out.get("motifs", []))
+    archetype = str(llm_out.get("archetype", "unknown")) or "unknown"
+    reframed = str(llm_out.get("reframed", ""))
 
-        st.success("Dream analyzed and saved!")
-        st.subheader("Quick insight")
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            st.write("**Archetype:**", archetype)
-            st.write("**Motifs:**", ", ".join(motifs) if motifs else "—")
-        with c2:
-            render_emotion_bar(emo)
+    # Save (PER-USER: pass user email first)
+    _ = insert_dream(
+        user_email=user["email"],
+        text=text,
+        tags=tags,
+        sleep_hours=float(sleep_hours),
+        sleep_quality=int(sleep_quality),
+        motifs=motifs,
+        archetype=archetype,
+        reframed=reframed,
+        emotions=emo,
+        embedding=emb
+    )
 
-        st.subheader("Emotion Map")
-        st.plotly_chart(emotion_node_graph(emo), use_container_width=True)
+    st.success("Dream analyzed and saved!")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.write("**Archetype:**", archetype)
+        st.write("**Motifs:**", ", ".join(motifs) if motifs else "—")
+    with c2:
+        render_emotion_bar(emo)
 
-        with st.expander("Therapeutic reframing"):
-            st.write(reframed)
+    st.subheader("Emotion Map")
+    st.plotly_chart(emotion_node_graph(emo), use_container_width=True)
 
-# ---- VOICE TAB ----
-with tab_voice:
+    with st.expander("Therapeutic reframing"):
+        st.write(reframed)
+
+card("Analyze & Save (Typing)", _type_card_body)
+
+# -------------------------- VOICE CARD --------------------------
+def _voice_card_body():
     st.write("Record a quick voice note or upload an audio file, and I’ll transcribe it into the editor.")
 
     # Keep transcript in session across reruns
@@ -186,10 +192,10 @@ with tab_voice:
         placeholder="Your transcript will appear here after recording/upload."
     )
 
-    colA, colB = st.columns([1, 1])
-    with colA:
+    c1, c2 = st.columns([1, 1])
+    with c1:
         v_sleep_hours = st.number_input("Sleep hours", min_value=0.0, max_value=24.0, value=7.0, step=0.5, key="v_hours")
-    with colB:
+    with c2:
         v_sleep_quality = st.slider("Sleep quality (1=poor, 5=great)", 1, 5, 3, key="v_quality")
     v_tags = st.text_input("Optional tags (comma separated)", placeholder="exam, chase, travel", key="v_tags")
 
@@ -210,7 +216,7 @@ with tab_voice:
         archetype = str(llm_out.get("archetype", "unknown")) or "unknown"
         reframed = str(llm_out.get("reframed", ""))
 
-        dream_id = insert_dream(
+        _ = insert_dream(
             user_email=user["email"],
             text=voice_text,
             tags=v_tags,
@@ -236,3 +242,5 @@ with tab_voice:
 
         with st.expander("Therapeutic reframing"):
             st.write(reframed)
+
+card("Analyze & Save (Voice)", _voice_card_body)
