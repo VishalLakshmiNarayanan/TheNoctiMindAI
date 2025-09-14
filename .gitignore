@@ -1,0 +1,19 @@
+# Hide environment & secrets
+.env
+*.db
+.streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+
+# OS junk
+.DS_Store
+Thumbs.db
