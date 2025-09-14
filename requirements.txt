@@ -12,3 +12,5 @@ Pillow>=10.3
 sqlalchemy>=2.0
 requests>=2.32
 networkx>=3.2
+streamlit-mic-recorder>=0.0.8
+soundfile>=0.12
